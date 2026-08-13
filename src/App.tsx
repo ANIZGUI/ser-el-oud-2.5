@@ -2,6 +2,7 @@ import { supabase } from "./utils/supabase";
 import {
   type FormEvent,
   type ReactNode,
+  type SyntheticEvent,
   useEffect,
   useMemo,
   useState,
@@ -104,10 +105,34 @@ type AdminUser = {
 
 type SupabaseProductRow = {
   id: string;
+  name?: string | null;
+  line?: string | null;
+  category?: string | null;
+  price?: number | null;
+  volume?: string | null;
+  concentration?: string | null;
+  rating?: number | null;
+  stock?: number | null;
+  mood?: string | null;
+  notes?: string[] | string | null;
+  description?: string | null;
+  tag?: string | null;
+  swatch?: string | null;
+  image_position?: string | null;
+  imagePosition?: string | null;
+  image_url?: string | null;
+  imageUrl?: string | null;
+};
+
+type NewProductInput = {
   name: string;
+  line: string;
   category: string;
   price: number;
   stock: number;
+  rating: number;
+  imageUrl: string;
+  notes: string[];
 };
 
 type SupabaseCategoryRow = {
@@ -274,6 +299,102 @@ function normalizePrice(price: number) {
   return Math.max(1, Math.min(Math.round(price), 9999));
 }
 
+function normalizeRating(rating: number) {
+  if (!Number.isFinite(rating)) return 0;
+  return Math.max(0, Math.min(Math.round(rating * 10) / 10, 5));
+}
+
+function normalizeNotes(notes: string[] | string | null | undefined, fallback: string[] = []) {
+  const rawNotes = Array.isArray(notes) ? notes : typeof notes === "string" ? notes.split(",") : fallback;
+  const cleanNotes = rawNotes.map((note) => note.trim()).filter(Boolean);
+  return cleanNotes.length > 0 ? cleanNotes : ["oud"];
+}
+
+function productImageSrc(product: StoreProduct) {
+  return product.imageUrl?.trim() || "/hero.jpg";
+}
+
+function handleProductImageError(event: SyntheticEvent<HTMLImageElement>) {
+  event.currentTarget.src = "/hero.jpg";
+}
+
+function createProductSlug(name: string, existingIds: string[]) {
+  const base =
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "produit";
+  let nextId = base;
+  let count = 2;
+  while (existingIds.includes(nextId)) {
+    nextId = `${base}-${count}`;
+    count += 1;
+  }
+  return nextId;
+}
+
+function productFromSupabaseRow(row: SupabaseProductRow, fallback?: StoreProduct): StoreProduct {
+  const name = row.name?.trim() || fallback?.name || "Produit sans nom";
+  const category = row.category?.trim() || fallback?.category || "Oud";
+  return {
+    id: row.id,
+    name,
+    line: row.line?.trim() || fallback?.line || "Signature maison",
+    category,
+    price: normalizePrice(Number(row.price ?? fallback?.price ?? 1)),
+    volume: row.volume?.trim() || fallback?.volume || "50 ml",
+    concentration: row.concentration?.trim() || fallback?.concentration || "Parfum",
+    rating: normalizeRating(Number(row.rating ?? fallback?.rating ?? 4.5)),
+    stock: normalizeStock(Number(row.stock ?? fallback?.stock ?? 0)),
+    mood: row.mood?.trim() || fallback?.mood || "Signature orientale, elegante, facile a porter",
+    notes: normalizeNotes(row.notes, fallback?.notes ?? [category]),
+    description:
+      row.description?.trim() ||
+      fallback?.description ||
+      `${name} rejoint le catalogue Serr El Oud avec une composition orientale soignee.`,
+    tag: row.tag?.trim() || fallback?.tag,
+    swatch: row.swatch?.trim() || fallback?.swatch || "#8f5a2f",
+    imagePosition:
+      row.image_position?.trim() ||
+      row.imagePosition?.trim() ||
+      fallback?.imagePosition ||
+      "50% 50%",
+    imageUrl: row.image_url?.trim() || row.imageUrl?.trim() || fallback?.imageUrl || "",
+  };
+}
+
+function productToSupabaseRow(product: StoreProduct) {
+  return {
+    id: product.id,
+    name: product.name,
+    line: product.line,
+    category: product.category,
+    price: product.price,
+    volume: product.volume,
+    concentration: product.concentration,
+    rating: product.rating,
+    stock: product.stock,
+    mood: product.mood,
+    notes: product.notes,
+    description: product.description,
+    tag: product.tag ?? null,
+    swatch: product.swatch,
+    image_position: product.imagePosition,
+    image_url: product.imageUrl ?? "",
+  };
+}
+
+function productToMinimalSupabaseRow(product: StoreProduct) {
+  return {
+    id: product.id,
+    name: product.name,
+    category: product.category,
+    price: product.price,
+    stock: product.stock,
+  };
+}
+
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
@@ -370,12 +491,14 @@ export default function App() {
   /* ---------- Supabase fetch ---------- */
 
   useEffect(() => {
+    if (!supabase) return;
     fetchOrders();
     fetchProducts();
     fetchCategories();
   }, []);
 
   async function fetchOrders() {
+    if (!supabase) return;
     const { data, error } = await supabase
       .from("orders")
       .select("*")
@@ -388,29 +511,39 @@ export default function App() {
   }
 
   async function fetchProducts() {
+    if (!supabase) return;
     const { data, error } = await supabase.from("products").select("*");
     if (error) {
       console.error("Erreur chargement produits:", error);
       return;
     }
     const rows = (data ?? []) as SupabaseProductRow[];
-    setInventoryProducts((current) =>
-      current.map((product) => {
-        const sp = rows.find((p) => p.id === product.id);
-        if (sp) {
-          return {
-            ...product,
-            price: sp.price,
-            stock: sp.stock,
-            category: sp.category,
-          };
-        }
-        return product;
-      })
-    );
+    setInventoryProducts((current) => {
+      const rowsById = new Map(rows.map((row) => [row.id, row]));
+      const currentById = new Map(current.map((product) => [product.id, product]));
+      const catalogById = new Map(
+        catalogProducts.map((product) => [
+          product.id,
+          product as StoreProduct,
+        ])
+      );
+
+      const merged = current.map((product) => {
+        const row = rowsById.get(product.id);
+        return row ? productFromSupabaseRow(row, product) : product;
+      });
+
+      rows.forEach((row) => {
+        if (currentById.has(row.id)) return;
+        merged.push(productFromSupabaseRow(row, catalogById.get(row.id)));
+      });
+
+      return merged;
+    });
   }
 
   async function fetchCategories() {
+    if (!supabase) return;
     const { data, error } = await supabase.from("categories").select("*");
     if (error) {
       console.error("Erreur chargement categories:", error);
@@ -532,6 +665,110 @@ export default function App() {
     });
   }
 
+  function syncCartQuantityWithStock(productId: string, nextStock: number) {
+    setCart((c) => {
+      if (c[productId] === undefined) return c;
+      const n = { ...c };
+      if (nextStock <= 0) {
+        delete n[productId];
+      } else {
+        n[productId] = Math.min(n[productId], nextStock, 9);
+      }
+      return n;
+    });
+  }
+
+  async function saveProductToSupabase(product: StoreProduct) {
+    if (!supabase) return true;
+
+    const { error } = await supabase.from("products").upsert(
+      productToSupabaseRow(product),
+      { onConflict: "id" }
+    );
+    if (!error) return true;
+
+    console.error("Erreur sauvegarde produit complet:", error);
+
+    const { error: fallbackError } = await supabase.from("products").upsert(
+      productToMinimalSupabaseRow(product),
+      { onConflict: "id" }
+    );
+    if (fallbackError) {
+      console.error("Erreur sauvegarde produit:", fallbackError);
+      return false;
+    }
+
+    console.warn(
+      "Produit sauvegarde avec les champs basiques seulement. Ajoutez les colonnes image_url et rating dans Supabase pour garder l'image et la note apres rechargement."
+    );
+    return true;
+  }
+
+  async function updateProduct(productId: string, patch: Partial<StoreProduct>) {
+    const product = inventoryProducts.find((i) => i.id === productId);
+    if (!product) {
+      console.error(`Produit introuvable: ${productId}`);
+      return false;
+    }
+
+    const nextProduct: StoreProduct = {
+      ...product,
+      ...patch,
+      price: patch.price === undefined ? product.price : normalizePrice(Number(patch.price)),
+      stock: patch.stock === undefined ? product.stock : normalizeStock(Number(patch.stock)),
+      rating: patch.rating === undefined ? product.rating : normalizeRating(Number(patch.rating)),
+      imageUrl: patch.imageUrl === undefined ? product.imageUrl : patch.imageUrl.trim(),
+      notes: patch.notes === undefined ? product.notes : normalizeNotes(patch.notes),
+    };
+
+    const saved = await saveProductToSupabase(nextProduct);
+    if (!saved) return false;
+
+    setInventoryProducts((current) =>
+      current.map((item) => (item.id === productId ? nextProduct : item))
+    );
+
+    if (patch.stock !== undefined) {
+      syncCartQuantityWithStock(productId, nextProduct.stock);
+    }
+    if (patch.price !== undefined) {
+      setMaxPrice((current) => Math.max(current, nextProduct.price));
+    }
+    if (patch.category && !activeCategoryNames.includes(patch.category)) {
+      setCategory("All");
+    }
+
+    return true;
+  }
+
+  async function addProduct(input: NewProductInput) {
+    const product: StoreProduct = {
+      id: createProductSlug(input.name, inventoryProducts.map((item) => item.id)),
+      name: input.name.trim(),
+      line: input.line.trim() || "Signature maison",
+      category: input.category,
+      price: normalizePrice(input.price),
+      volume: "50 ml",
+      concentration: "Parfum",
+      rating: normalizeRating(input.rating),
+      stock: normalizeStock(input.stock),
+      mood: normalizeNotes(input.notes, [input.category]).join(", "),
+      notes: normalizeNotes(input.notes, [input.category]),
+      description: `${input.name.trim()} rejoint le catalogue Serr El Oud avec une composition orientale soignee.`,
+      swatch: "#8f5a2f",
+      imagePosition: "50% 50%",
+      imageUrl: input.imageUrl.trim(),
+    };
+
+    const saved = await saveProductToSupabase(product);
+    if (!saved) return false;
+
+    setInventoryProducts((current) => [...current, product]);
+    setSelectedProductId(product.id);
+    setMaxPrice((current) => Math.max(current, product.price));
+    return true;
+  }
+
   /* ---------- Submit contact ---------- */
 
   async function submitContact(event: FormEvent<HTMLFormElement>) {
@@ -567,25 +804,37 @@ export default function App() {
       gift: giftOrder,
     };
 
-    const { error } = await supabase.from("orders").insert([newOrder]);
-    if (error) {
-      console.error("Erreur insertion commande:", error);
-      setContactError("Erreur lors de l'enregistrement de la commande.");
-      return;
-    }
-
-    if (cartItems.length > 0) {
-      for (const { product, quantity } of cartItems) {
-        const nextStock = normalizeStock(product.stock - quantity);
-        await supabase.from("products").upsert(
-          { id: product.id, name: product.name, category: product.category, price: product.price, stock: nextStock },
-          { onConflict: "id" }
-        );
+    if (supabase) {
+      const { error } = await supabase.from("orders").insert([newOrder]);
+      if (error) {
+        console.error("Erreur insertion commande:", error);
+        setContactError("Erreur lors de l'enregistrement de la commande.");
+        return;
       }
-    }
 
-    await fetchOrders();
-    await fetchProducts();
+      if (cartItems.length > 0) {
+        for (const { product, quantity } of cartItems) {
+          const nextStock = normalizeStock(product.stock - quantity);
+          await supabase.from("products").upsert(
+            { id: product.id, name: product.name, category: product.category, price: product.price, stock: nextStock },
+            { onConflict: "id" }
+          );
+        }
+      }
+
+      await fetchOrders();
+      await fetchProducts();
+    } else {
+      setAdminOrders((current) => [newOrder, ...current]);
+      setInventoryProducts((current) =>
+        current.map((product) => {
+          const cartItem = cartItems.find((item) => item.product.id === product.id);
+          return cartItem
+            ? { ...product, stock: normalizeStock(product.stock - cartItem.quantity) }
+            : product;
+        })
+      );
+    }
 
     setSubmittedOrderId(orderId);
     setSubmitted(true);
@@ -598,6 +847,15 @@ export default function App() {
   /* ---------- Order status ---------- */
 
   async function updateOrderStatus(orderId: string, status: OrderStatus) {
+    if (!supabase) {
+      setAdminOrders((current) =>
+        current.map((order) =>
+          order.id === orderId ? { ...order, status } : order
+        )
+      );
+      return;
+    }
+
     const { error } = await supabase.from("orders").update({ status }).eq("id", orderId);
     if (error) {
       console.error("Erreur mise à jour statut:", error);
@@ -616,6 +874,16 @@ export default function App() {
       return;
     }
 
+    if (!supabase) {
+      setInventoryProducts((current) =>
+        current.map((item) =>
+          item.id === productId ? { ...item, stock: nextStock } : item
+        )
+      );
+      syncCartQuantityWithStock(productId, nextStock);
+      return;
+    }
+
     const { error } = await supabase.from("products").upsert(
       { id: product.id, name: product.name, category: product.category, price: product.price, stock: nextStock },
       { onConflict: "id" }
@@ -628,16 +896,7 @@ export default function App() {
     console.log("✅ Stock mis à jour:", productId, nextStock);
     await fetchProducts();
 
-    setCart((c) => {
-      if (c[productId] === undefined) return c;
-      const n = { ...c };
-      if (nextStock <= 0) {
-        delete n[productId];
-      } else {
-        n[productId] = Math.min(n[productId], nextStock, 9);
-      }
-      return n;
-    });
+    syncCartQuantityWithStock(productId, nextStock);
   }
 
   /* ---------- Product price ---------- */
@@ -647,6 +906,16 @@ export default function App() {
     const product = inventoryProducts.find((i) => i.id === productId);
     if (!product) {
       console.error(`Produit introuvable: ${productId}`);
+      return;
+    }
+
+    if (!supabase) {
+      setInventoryProducts((current) =>
+        current.map((item) =>
+          item.id === productId ? { ...item, price: nextPrice } : item
+        )
+      );
+      setMaxPrice((c) => Math.max(c, nextPrice));
       return;
     }
 
@@ -674,6 +943,16 @@ export default function App() {
       return;
     }
 
+    if (!supabase) {
+      setInventoryProducts((current) =>
+        current.map((item) =>
+          item.id === productId ? { ...item, category: nextCategory } : item
+        )
+      );
+      if (!activeCategoryNames.includes(nextCategory)) setCategory("All");
+      return;
+    }
+
     const { error } = await supabase.from("products").upsert(
       { id: product.id, name: product.name, category: nextCategory, price: product.price, stock: product.stock },
       { onConflict: "id" }
@@ -687,10 +966,26 @@ export default function App() {
     await fetchProducts();
   }
 
+  async function updateProductRating(productId: string, rating: number) {
+    await updateProduct(productId, { rating: normalizeRating(rating) });
+  }
+
+  async function updateProductImage(productId: string, imageUrl: string) {
+    await updateProduct(productId, { imageUrl });
+  }
+
   /* ---------- Admin categories ---------- */
 
   async function addAdminCategory(name: string) {
     const newCat = { id: `cat-${Date.now()}`, name, active: true, margin: 35 };
+    if (!supabase) {
+      setAdminCategories((current) => [
+        ...current,
+        { ...newCat, products: 0 },
+      ]);
+      return;
+    }
+
     const { error } = await supabase.from("categories").insert([newCat]);
     if (error) {
       console.error("Erreur ajout categorie:", error);
@@ -703,6 +998,16 @@ export default function App() {
     const cat = adminCategories.find((i) => i.id === categoryId);
     if (!cat) return;
     const nextActive = !cat.active;
+    if (!supabase) {
+      setAdminCategories((current) =>
+        current.map((item) =>
+          item.id === categoryId ? { ...item, active: nextActive } : item
+        )
+      );
+      if (cat.active && category === cat.name) setCategory("All");
+      return;
+    }
+
     const { error } = await supabase.from("categories").update({ active: nextActive }).eq("id", categoryId);
     if (error) {
       console.error("Erreur toggle categorie:", error);
@@ -792,10 +1097,13 @@ export default function App() {
             orders={adminOrders}
             products={inventoryProducts}
             onAddCategory={addAdminCategory}
+            onAddProduct={addProduct}
             onLogin={() => setAdminAuthenticated(true)}
             onLogout={() => setAdminAuthenticated(false)}
             onProductCategory={updateProductCategory}
+            onProductImage={updateProductImage}
             onProductPrice={updateProductPrice}
+            onProductRating={updateProductRating}
             onOrderStatus={updateOrderStatus}
             onStockChange={updateProductStock}
             onToggleCategory={toggleAdminCategory}
@@ -967,7 +1275,7 @@ function ProductDetail({ product, onAddToCart }: { product: StoreProduct; onAddT
   return (
     <article className="grid overflow-hidden rounded border border-stone/10 bg-white shadow-sm lg:grid-cols-[0.9fr_1.1fr]">
       <div className="relative min-h-72 bg-ink">
-        <img alt={`${product.name} perfume display`} className="absolute inset-0 h-full w-full object-cover" src="/hero.jpg" style={{ objectPosition: product.imagePosition }} />
+        <img alt={`${product.name} perfume display`} className="absolute inset-0 h-full w-full object-cover" onError={handleProductImageError} src={productImageSrc(product)} style={{ objectPosition: product.imagePosition }} />
         <div className="absolute inset-0 opacity-75" style={{ background: `linear-gradient(135deg, ${product.swatch}CC, rgba(18,15,12,.25))` }} />
         <div className="absolute bottom-5 left-5 right-5"><p className="mb-2 inline-flex rounded bg-white/92 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-ink">{product.category}</p><h2 className="font-display text-4xl font-semibold text-white">{product.name}</h2></div>
       </div>
@@ -989,7 +1297,7 @@ function ProductCard({ product, selected = false, onAddToCart, onSelect }: { pro
   return (
     <article className={`group overflow-hidden rounded border bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${selected ? "border-sage" : "border-stone/10"}`}>
       <button className="relative block h-48 w-full overflow-hidden bg-ink text-left" onClick={onSelect} type="button">
-        <img alt={`${product.name} fragrance`} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" src="/hero.jpg" style={{ objectPosition: product.imagePosition }} />
+        <img alt={`${product.name} fragrance`} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" onError={handleProductImageError} src={productImageSrc(product)} style={{ objectPosition: product.imagePosition }} />
         <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, rgba(0,0,0,.08), ${product.swatch}B3)` }} />
         {product.tag && (<span className="absolute left-3 top-3 rounded bg-white px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-ink">{product.tag}</span>)}
         <span className="absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-full bg-white text-ink shadow"><ArrowUpRight size={18} /></span>
@@ -1110,10 +1418,10 @@ function OrderStatusPage({ initialPhone, initialReference, orders }: { initialPh
    ADMIN PAGE
    ═══════════════════════════════════════════════════════════ */
 
-function AdminPage({ authenticated, categories, orders, products, onAddCategory, onLogin, onLogout, onProductCategory, onProductPrice, onOrderStatus, onStockChange, onToggleCategory }: {
+function AdminPage({ authenticated, categories, orders, products, onAddCategory, onAddProduct, onLogin, onLogout, onProductCategory, onProductImage, onProductPrice, onProductRating, onOrderStatus, onStockChange, onToggleCategory }: {
   authenticated: boolean; categories: AdminCategory[]; orders: AdminOrder[]; products: StoreProduct[];
-  onAddCategory: (n: string) => void; onLogin: () => void; onLogout: () => void;
-  onProductCategory: (id: string, c: string) => void; onProductPrice: (id: string, p: number) => void;
+  onAddCategory: (n: string) => void; onAddProduct: (product: NewProductInput) => Promise<boolean> | boolean; onLogin: () => void; onLogout: () => void;
+  onProductCategory: (id: string, c: string) => void; onProductImage: (id: string, imageUrl: string) => void; onProductPrice: (id: string, p: number) => void; onProductRating: (id: string, r: number) => void;
   onOrderStatus: (id: string, s: OrderStatus) => void; onStockChange: (id: string, s: number) => void; onToggleCategory: (id: string) => void;
 }) {
   const [tab, setTab] = useState<AdminTab>("overview");
@@ -1130,10 +1438,26 @@ function AdminPage({ authenticated, categories, orders, products, onAddCategory,
   const [orderStatusFilter, setOrderStatusFilter] = useState<OrderStatus | "All">("All");
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
+  const [ratingDrafts, setRatingDrafts] = useState<Record<string, string>>({});
+  const [imageDrafts, setImageDrafts] = useState<Record<string, string>>({});
+  const [productForm, setProductForm] = useState({
+    name: "",
+    line: "",
+    category: "",
+    price: "",
+    stock: "",
+    rating: "4.5",
+    imageUrl: "",
+    notes: "",
+  });
+  const [productFormError, setProductFormError] = useState("");
+  const [productSaving, setProductSaving] = useState(false);
 
   useEffect(() => {
     setPriceDrafts(Object.fromEntries(products.map((p) => [p.id, String(p.price)])));
     setStockDrafts(Object.fromEntries(products.map((p) => [p.id, String(p.stock)])));
+    setRatingDrafts(Object.fromEntries(products.map((p) => [p.id, String(p.rating)])));
+    setImageDrafts(Object.fromEntries(products.map((p) => [p.id, p.imageUrl ?? ""])));
   }, [products]);
 
   const activeOrders = orders.filter((o) => o.status !== "Cancelled");
@@ -1162,6 +1486,49 @@ function AdminPage({ authenticated, categories, orders, products, onAddCategory,
     const val = Number(raw);
     if (!raw.trim() || Number.isNaN(val)) { setStockDrafts((c) => { const p = products.find((i) => i.id === productId); return { ...c, [productId]: p ? String(p.stock) : "0" }; }); return; }
     onStockChange(productId, val);
+  }
+
+  function commitRating(productId: string) {
+    const raw = ratingDrafts[productId] ?? "";
+    const val = Number(raw);
+    if (!raw.trim() || Number.isNaN(val)) { setRatingDrafts((c) => { const p = products.find((i) => i.id === productId); return { ...c, [productId]: p ? String(p.rating) : "0" }; }); return; }
+    onProductRating(productId, val);
+  }
+
+  function commitImage(productId: string) {
+    onProductImage(productId, (imageDrafts[productId] ?? "").trim());
+  }
+
+  async function submitProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = productForm.name.trim();
+    const category = productForm.category || categories.find((c) => c.active)?.name || categories[0]?.name || "Oud";
+    const price = Number(productForm.price);
+    const stock = Number(productForm.stock);
+    const rating = Number(productForm.rating);
+    const notes = normalizeNotes(productForm.notes, [category]);
+
+    if (name.length < 2) { setProductFormError("Le nom du produit doit contenir au moins 2 caracteres."); return; }
+    if (!Number.isFinite(price) || price <= 0) { setProductFormError("Prix invalide."); return; }
+    if (!Number.isFinite(stock) || stock < 0) { setProductFormError("Stock invalide."); return; }
+    if (!Number.isFinite(rating) || rating < 0 || rating > 5) { setProductFormError("La note doit etre entre 0 et 5."); return; }
+
+    setProductSaving(true);
+    const saved = await onAddProduct({
+      name,
+      line: productForm.line,
+      category,
+      price,
+      stock,
+      rating,
+      imageUrl: productForm.imageUrl,
+      notes,
+    });
+    setProductSaving(false);
+
+    if (!saved) { setProductFormError("Produit non sauvegarde. Verifiez la table products dans Supabase."); return; }
+    setProductForm({ name: "", line: "", category, price: "", stock: "", rating: "4.5", imageUrl: "", notes: "" });
+    setProductFormError("");
   }
 
   function submitAdminLogin(event: FormEvent<HTMLFormElement>) {
@@ -1261,9 +1628,21 @@ function AdminPage({ authenticated, categories, orders, products, onAddCategory,
           {/* INVENTORY */}
           {tab === "inventory" && (
             <AdminPanel title="Gestion stock catalogue" icon={<Boxes size={20} />}>
-              <div className="overflow-x-auto"><table className="w-full min-w-[900px] border-collapse text-left"><thead><tr className="border-b border-stone/10 text-xs font-bold uppercase tracking-[0.14em] text-stone"><th className="py-3 pr-4">Produit</th><th className="py-3 pr-4">Categorie</th><th className="py-3 pr-4">Prix</th><th className="py-3 pr-4">Stock</th><th className="py-3 pr-4">Note</th><th className="py-3 pr-4">Action</th></tr></thead><tbody>{products.map((product) => (
+              <form className="mb-5 grid gap-3 border-b border-stone/10 pb-5 xl:grid-cols-[1.2fr_1fr_150px_120px_120px_120px]" onSubmit={submitProduct}>
+                <label><span className="text-xs font-bold uppercase tracking-[0.14em] text-stone">Produit</span><input className="mt-2 h-11 w-full rounded border border-stone/15 bg-porcelain px-4 text-sm outline-none focus:border-sage" onChange={(e) => { setProductForm((c) => ({ ...c, name: e.target.value })); setProductFormError(""); }} placeholder="Nom produit" required value={productForm.name} /></label>
+                <label><span className="text-xs font-bold uppercase tracking-[0.14em] text-stone">Ligne</span><input className="mt-2 h-11 w-full rounded border border-stone/15 bg-porcelain px-4 text-sm outline-none focus:border-sage" onChange={(e) => setProductForm((c) => ({ ...c, line: e.target.value }))} placeholder="Ex: Oud parfum" value={productForm.line} /></label>
+                <label><span className="text-xs font-bold uppercase tracking-[0.14em] text-stone">Categorie</span><select className="mt-2 h-11 w-full rounded border border-stone/15 bg-porcelain px-3 text-sm font-semibold outline-none focus:border-sage" onChange={(e) => setProductForm((c) => ({ ...c, category: e.target.value }))} value={productForm.category || categories.find((c) => c.active)?.name || categories[0]?.name || ""}>{categories.map((c) => (<option key={c.id} value={c.name}>{c.name}</option>))}</select></label>
+                <label><span className="text-xs font-bold uppercase tracking-[0.14em] text-stone">Prix</span><input className="mt-2 h-11 w-full rounded border border-stone/15 bg-porcelain px-3 text-center text-sm font-bold outline-none focus:border-sage" max="9999" min="1" onChange={(e) => setProductForm((c) => ({ ...c, price: e.target.value }))} required type="number" value={productForm.price} /></label>
+                <label><span className="text-xs font-bold uppercase tracking-[0.14em] text-stone">Stock</span><input className="mt-2 h-11 w-full rounded border border-stone/15 bg-porcelain px-3 text-center text-sm font-bold outline-none focus:border-sage" max="99" min="0" onChange={(e) => setProductForm((c) => ({ ...c, stock: e.target.value }))} required type="number" value={productForm.stock} /></label>
+                <label><span className="text-xs font-bold uppercase tracking-[0.14em] text-stone">Note</span><input className="mt-2 h-11 w-full rounded border border-stone/15 bg-porcelain px-3 text-center text-sm font-bold outline-none focus:border-sage" max="5" min="0" onChange={(e) => setProductForm((c) => ({ ...c, rating: e.target.value }))} step="0.1" type="number" value={productForm.rating} /></label>
+                <label className="xl:col-span-3"><span className="text-xs font-bold uppercase tracking-[0.14em] text-stone">Image produit</span><input className="mt-2 h-11 w-full rounded border border-stone/15 bg-porcelain px-4 text-sm outline-none focus:border-sage" onChange={(e) => setProductForm((c) => ({ ...c, imageUrl: e.target.value }))} placeholder="https://.../image.jpg" type="url" value={productForm.imageUrl} /></label>
+                <label className="xl:col-span-2"><span className="text-xs font-bold uppercase tracking-[0.14em] text-stone">Notes parfum</span><input className="mt-2 h-11 w-full rounded border border-stone/15 bg-porcelain px-4 text-sm outline-none focus:border-sage" onChange={(e) => setProductForm((c) => ({ ...c, notes: e.target.value }))} placeholder="oud, musc, ambre" value={productForm.notes} /></label>
+                <button className="mt-auto inline-flex h-11 items-center justify-center gap-2 rounded bg-ink px-4 text-sm font-bold text-white transition hover:bg-sage disabled:cursor-not-allowed disabled:bg-stone/25" disabled={productSaving} type="submit"><Plus size={17} />{productSaving ? "Ajout..." : "Ajouter"}</button>
+              </form>
+              {productFormError && (<p className="mb-5 rounded border border-clay/20 bg-clay/10 px-4 py-3 text-sm font-semibold text-clay">{productFormError}</p>)}
+              <div className="overflow-x-auto"><table className="w-full min-w-[1180px] border-collapse text-left"><thead><tr className="border-b border-stone/10 text-xs font-bold uppercase tracking-[0.14em] text-stone"><th className="py-3 pr-4">Produit</th><th className="py-3 pr-4">Categorie</th><th className="py-3 pr-4">Prix</th><th className="py-3 pr-4">Stock</th><th className="py-3 pr-4">Note</th><th className="py-3 pr-4">Action</th></tr></thead><tbody>{products.map((product) => (
                 <tr className="border-b border-stone/10 last:border-0" key={product.id}>
-                  <td className="py-4 pr-4"><div className="flex items-center gap-3"><span className="h-10 w-10 rounded border border-stone/10" style={{ background: product.swatch }} /><div><p className="font-bold text-ink">{product.name}</p><p className="text-sm text-stone">{product.line}</p></div></div></td>
+                  <td className="py-4 pr-4"><div className="grid min-w-[340px] gap-3"><div className="flex items-center gap-3"><img alt={`${product.name} thumbnail`} className="h-14 w-14 rounded border border-stone/10 object-cover" onError={handleProductImageError} src={productImageSrc(product)} style={{ objectPosition: product.imagePosition }} /><div className="min-w-0"><p className="truncate font-bold text-ink">{product.name}</p><p className="truncate text-sm text-stone">{product.line}</p></div></div><input aria-label={`Image URL for ${product.name}`} className="h-10 w-full rounded border border-stone/15 bg-porcelain px-3 text-sm outline-none focus:border-sage" onBlur={() => commitImage(product.id)} onChange={(e) => setImageDrafts((c) => ({ ...c, [product.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitImage(product.id); e.currentTarget.blur(); } }} placeholder="Image URL" type="url" value={imageDrafts[product.id] ?? product.imageUrl ?? ""} /></div></td>
                   <td className="py-4 pr-4"><select aria-label={`Change category for ${product.name}`} className="h-10 rounded border border-stone/15 bg-porcelain px-3 text-sm font-semibold outline-none focus:border-sage" onChange={(e) => onProductCategory(product.id, e.target.value)} value={product.category}>{categories.map((c) => (<option key={c.id} value={c.name}>{c.name}</option>))}</select></td>
                   <td className="py-4 pr-4"><label className="inline-flex h-10 items-center rounded border border-stone/15 bg-white"><input aria-label={`Price for ${product.name}`} className="h-full w-24 bg-transparent px-3 text-center text-sm font-bold text-ink outline-none focus:text-sage" max="9999" min="1" onBlur={() => commitPrice(product.id)} onChange={(e) => setPriceDrafts((c) => ({ ...c, [product.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitPrice(product.id); e.currentTarget.blur(); } }} required type="number" value={priceDrafts[product.id] ?? String(product.price)} /><span className="border-l border-stone/15 px-3 text-xs font-bold uppercase tracking-[0.1em] text-stone">DT</span></label></td>
                   <td className="py-4 pr-4"><div className="inline-flex items-center rounded border border-stone/15 bg-porcelain">
@@ -1271,7 +1650,7 @@ function AdminPage({ authenticated, categories, orders, products, onAddCategory,
                     <input aria-label={`Stock amount for ${product.name}`} className={`h-10 w-16 border-x border-stone/15 bg-white text-center text-sm font-bold outline-none focus:border-sage ${product.stock <= 8 ? "text-clay" : "text-sage"}`} max="99" min="0" onBlur={() => commitStock(product.id)} onChange={(e) => setStockDrafts((c) => ({ ...c, [product.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitStock(product.id); e.currentTarget.blur(); } }} type="number" value={stockDrafts[product.id] ?? String(product.stock)} />
                     <button aria-label={`Increase stock for ${product.name}`} className="grid h-10 w-10 place-items-center text-stone transition hover:text-ink" onClick={() => { const v = product.stock + 1; setStockDrafts((c) => ({ ...c, [product.id]: String(v) })); onStockChange(product.id, v); }} type="button"><Plus size={16} /></button>
                   </div></td>
-                  <td className="py-4 pr-4 text-sm font-semibold text-stone">{product.rating.toFixed(1)}</td>
+                  <td className="py-4 pr-4"><input aria-label={`Rating for ${product.name}`} className="h-10 w-20 rounded border border-stone/15 bg-white px-3 text-center text-sm font-bold text-brass outline-none focus:border-sage" max="5" min="0" onBlur={() => commitRating(product.id)} onChange={(e) => setRatingDrafts((c) => ({ ...c, [product.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitRating(product.id); e.currentTarget.blur(); } }} step="0.1" type="number" value={ratingDrafts[product.id] ?? String(product.rating)} /></td>
                   <td className="py-4 pr-4"><span className="inline-flex h-10 items-center gap-2 rounded border border-sage/20 bg-sage/10 px-3 text-sm font-bold text-sage"><Edit3 size={16} />Auto saved</span></td>
                 </tr>
               ))}</tbody></table></div>

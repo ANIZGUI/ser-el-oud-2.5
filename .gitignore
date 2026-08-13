@@ -16,3 +16,5 @@ vite-dev.*.log
 # OS
 .DS_Store
 Thumbs.db
+.env
+.env.local

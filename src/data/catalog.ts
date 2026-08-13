@@ -16,6 +16,7 @@ export type Product = {
   tag?: string;
   swatch: string;
   imagePosition: string;
+  imageUrl?: string;
 };
 
 export const productCategories: Array<ProductCategory | "All"> = [
