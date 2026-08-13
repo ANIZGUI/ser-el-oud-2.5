@@ -1,7 +1,18 @@
+# Variables d'environnement
+.env
+.env.local
+.env.*.local
+
+# Dépendances
 node_modules/
+
+# Build
 dist/
+
+# Logs
 *.log
 vite-dev.*.log
+
+# OS
 .DS_Store
 Thumbs.db
-
