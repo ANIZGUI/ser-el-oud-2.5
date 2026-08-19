@@ -21,6 +21,7 @@ import {
   Heart,
   Leaf,
   LayoutDashboard,
+  LogOut,
   Mail,
   MapPin,
   Menu,
@@ -29,6 +30,7 @@ import {
   Package,
   Phone,
   Plus,
+  RefreshCw,
   Save,
   Search,
   Send,
@@ -152,7 +154,7 @@ const navigation: Array<{ id: Page; label: string }> = [
   { id: "services", label: "Services" },
   { id: "contact", label: "Contact" },
   { id: "tracking", label: "Suivi" },
-  { id: "admin", label: "Admin" },
+  { id: "admin", label: "Login" },
 ];
 
 const socialLinks: Array<{
@@ -201,7 +203,7 @@ const pageTitles: Record<Page, string> = {
   services: "Private Services",
   contact: "Visit And Order",
   tracking: "Suivi Commande",
-  admin: "Espace Admin",
+  admin: "Tableau de bord",
 };
 
 const formatPrice = (price: number) => `${price} DT`;
@@ -226,12 +228,62 @@ const adminTabs: Array<{
   label: string;
   icon: typeof LayoutDashboard;
 }> = [
-  { id: "overview", label: "Dashboard", icon: LayoutDashboard },
+  { id: "overview", label: "Tableau de bord", icon: LayoutDashboard },
   { id: "orders", label: "Commandes", icon: ClipboardList },
-  { id: "categories", label: "Categories", icon: Tags },
-  { id: "admins", label: "Admins", icon: UserCog },
-  { id: "inventory", label: "Stock", icon: Boxes },
+  { id: "inventory", label: "Produits / Stock", icon: Boxes },
+  { id: "categories", label: "Catégories", icon: Tags },
+  { id: "admins", label: "Administrateurs", icon: UserCog },
 ];
+
+const adminTabDescriptions: Record<AdminTab, string> = {
+  overview: "Vue d’ensemble de votre activité",
+  orders: "Suivi et traitement des commandes",
+  inventory: "Catalogue, prix et niveaux de stock",
+  categories: "Organisation du catalogue",
+  admins: "Accès et rôles de l’équipe",
+};
+
+const orderStatusLabels: Record<OrderStatus, string> = {
+  Pending: "En attente",
+  Confirmed: "Confirmée",
+  Preparing: "En préparation",
+  Delivered: "Livrée",
+  Cancelled: "Annulée",
+};
+
+const adminRoleLabels: Record<AdminRole, string> = {
+  Owner: "Propriétaire",
+  Manager: "Responsable",
+  Sales: "Ventes",
+  Stock: "Stock",
+};
+
+const formatAdminPrice = (price: number) =>
+  new Intl.NumberFormat("fr-TN", {
+    style: "currency",
+    currency: "TND",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  }).format(price);
+
+const formatAdminDate = (date: string) => {
+  const parsed = new Date(`${date}T12:00:00`);
+  return Number.isNaN(parsed.getTime())
+    ? date
+    : new Intl.DateTimeFormat("fr-FR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }).format(parsed);
+};
+
+const formatAdminActivity = (activity: string) => {
+  if (activity === "Now") return "Maintenant";
+  if (activity === "Yesterday") return "Hier";
+  if (activity === "Invite sent") return "Invitation envoyée";
+  const minutes = activity.match(/^(\d+) min ago$/);
+  return minutes ? `Il y a ${minutes[1]} min` : activity;
+};
 
 /* ───────────────────────── INITIAL DATA ───────────────────────── */
 
@@ -1095,14 +1147,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-ivory text-ink">
-      <Header
-        cartCount={cartCount}
-        currentPage={page}
-        mobileOpen={mobileOpen}
-        onCart={() => setCartOpen(true)}
-        onMenu={() => setMobileOpen((o) => !o)}
-        onNavigate={navigate}
-      />
+      {page !== "admin" && (
+        <Header
+          cartCount={cartCount}
+          currentPage={page}
+          mobileOpen={mobileOpen}
+          onCart={() => setCartOpen(true)}
+          onMenu={() => setMobileOpen((o) => !o)}
+          onNavigate={navigate}
+        />
+      )}
 
       <main>
         {page === "home" && (
@@ -1197,6 +1251,7 @@ export default function App() {
             products={inventoryProducts}
             onAddCategory={addAdminCategory}
             onAddProduct={addProduct}
+            onGoToStore={() => navigate("home")}
             onLogin={() => setAdminAuthenticated(true)}
             onLogout={() => setAdminAuthenticated(false)}
             onProductCategory={updateProductCategory}
@@ -1206,11 +1261,14 @@ export default function App() {
             onOrderStatus={updateOrderStatus}
             onStockChange={updateProductStock}
             onToggleCategory={toggleAdminCategory}
+            onRefresh={async () => {
+              await Promise.all([fetchOrders(), fetchProducts(), fetchCategories()]);
+            }}
           />
         )}
       </main>
 
-      <Footer onNavigate={navigate} />
+      {page !== "admin" && <Footer onNavigate={navigate} />}
 
       <CartDrawer
         cartItems={cartItems}
@@ -1245,18 +1303,18 @@ function Header({
   onNavigate: (p: Page) => void;
 }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-stone/10 bg-ivory/92 backdrop-blur-xl">
-      <div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-5 sm:px-8">
+    <header className="sticky top-0 z-40 border-b border-brass/15 bg-ivory/95 shadow-[0_8px_28px_rgba(37,31,23,0.055)] backdrop-blur-xl">
+      <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:gap-6 lg:px-8">
         <button
-          className="group flex items-center gap-3 text-left"
+          className="group flex shrink-0 items-center gap-3 rounded-xl text-left focus-visible:outline-brass"
           onClick={() => onNavigate("home")}
           type="button"
         >
-          <span className="grid h-10 w-10 place-items-center rounded border border-brass/35 bg-porcelain text-brass shadow-sm">
+          <span className="grid h-10 w-10 place-items-center rounded-xl border border-brass/35 bg-white/65 text-brass shadow-sm transition group-hover:border-brass/65 group-hover:bg-white">
             <Sparkles size={18} />
           </span>
           <span>
-            <span className="block font-display text-xl font-semibold tracking-wide text-ink">
+            <span className="block font-display text-xl font-semibold tracking-wide text-ink transition group-hover:text-sage">
               Serr El Oud
             </span>
             <span className="block text-[11px] uppercase tracking-[0.18em] text-stone">
@@ -1265,13 +1323,13 @@ function Header({
           </span>
         </button>
 
-        <nav className="hidden items-center gap-1 rounded border border-stone/10 bg-white/70 p-1 shadow-sm md:flex">
-          {navigation.map((item) => (
+        <nav className="hidden items-center gap-0.5 rounded-xl border border-stone/10 bg-white/55 p-1 shadow-[0_3px_14px_rgba(37,31,23,0.04)] lg:flex">
+          {navigation.filter((item) => item.id !== "admin").map((item) => (
             <button
-              className={`h-10 rounded px-4 text-sm font-medium transition ${
+              className={`relative h-10 rounded-lg px-3.5 text-[13px] font-semibold transition-all duration-200 after:absolute after:bottom-1 after:left-1/2 after:h-0.5 after:-translate-x-1/2 after:rounded-full after:bg-brass after:transition-all ${
                 currentPage === item.id
-                  ? "bg-ink text-white"
-                  : "text-stone hover:bg-porcelain hover:text-ink"
+                  ? "bg-ink text-white shadow-sm after:w-5"
+                  : "text-stone after:w-0 hover:bg-porcelain/80 hover:text-ink hover:after:w-3"
               }`}
               key={item.id}
               onClick={() => onNavigate(item.id)}
@@ -1282,14 +1340,23 @@ function Header({
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            aria-label="Login"
+            className="hidden h-10 w-10 items-center justify-center gap-2 rounded-xl border border-brass/50 bg-ink px-0 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(23,21,18,0.14)] transition-all hover:-translate-y-px hover:border-brass hover:bg-sage hover:shadow-[0_7px_18px_rgba(23,21,18,0.18)] focus-visible:outline-brass min-[420px]:inline-flex xl:w-auto xl:px-4"
+            onClick={() => onNavigate("admin")}
+            type="button"
+          >
+            <UserCog size={17} />
+            <span className="hidden xl:inline">Login</span>
+          </button>
           <button
             aria-label="Open cart"
-            className="relative grid h-11 w-11 place-items-center rounded border border-stone/15 bg-white text-ink shadow-sm transition hover:border-brass/60"
+            className="relative grid h-10 w-10 place-items-center rounded-xl border border-stone/15 bg-white/80 text-ink shadow-sm transition-all hover:-translate-y-px hover:border-brass/60 hover:bg-white hover:text-sage focus-visible:outline-brass"
             onClick={onCart}
             type="button"
           >
-            <ShoppingBag size={19} />
+            <ShoppingBag size={18} />
             {cartCount > 0 && (
               <span className="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full bg-sage px-1 text-xs font-bold text-white">
                 {cartCount}
@@ -1298,7 +1365,7 @@ function Header({
           </button>
           <button
             aria-label="Open menu"
-            className="grid h-11 w-11 place-items-center rounded border border-stone/15 bg-white text-ink shadow-sm md:hidden"
+            className="grid h-10 w-10 place-items-center rounded-xl border border-stone/15 bg-white/80 text-ink shadow-sm transition hover:border-brass/60 hover:bg-white hover:text-sage focus-visible:outline-brass lg:hidden"
             onClick={onMenu}
             type="button"
           >
@@ -1308,12 +1375,22 @@ function Header({
       </div>
 
       {mobileOpen && (
-        <div className="border-t border-stone/10 bg-ivory px-5 py-4 md:hidden">
-          <div className="grid gap-2">
-            {navigation.map((item) => (
+        <div className="border-t border-brass/15 bg-ivory/98 px-4 py-4 shadow-[inset_0_8px_18px_rgba(37,31,23,0.025)] sm:px-6 lg:hidden">
+          <button
+            className="mb-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-brass/50 bg-ink px-4 text-sm font-semibold text-white shadow-sm transition hover:border-brass hover:bg-sage focus-visible:outline-brass min-[420px]:hidden"
+            onClick={() => onNavigate("admin")}
+            type="button"
+          >
+            <UserCog size={16} />
+            Login
+          </button>
+          <div className="mx-auto grid max-w-7xl gap-1.5">
+            {navigation.filter((item) => item.id !== "admin").map((item) => (
               <button
-                className={`rounded px-4 py-3 text-left text-sm font-medium ${
-                  currentPage === item.id ? "bg-ink text-white" : "bg-white text-stone"
+                className={`relative rounded-xl border px-4 py-3 text-left text-sm font-semibold transition after:absolute after:bottom-2 after:left-4 after:h-0.5 after:rounded-full after:bg-brass ${
+                  currentPage === item.id
+                    ? "border-ink bg-ink text-white shadow-sm after:w-5"
+                    : "border-stone/10 bg-white/75 text-stone after:w-0 hover:border-brass/30 hover:bg-white hover:text-ink"
                 }`}
                 key={item.id}
                 onClick={() => onNavigate(item.id)}
@@ -2496,6 +2573,7 @@ function AdminPage({
   products,
   onAddCategory,
   onAddProduct,
+  onGoToStore,
   onLogin,
   onLogout,
   onProductCategory,
@@ -2505,6 +2583,7 @@ function AdminPage({
   onOrderStatus,
   onStockChange,
   onToggleCategory,
+  onRefresh,
 }: {
   authenticated: boolean;
   categories: AdminCategory[];
@@ -2512,6 +2591,7 @@ function AdminPage({
   products: StoreProduct[];
   onAddCategory: (n: string) => void;
   onAddProduct: (product: NewProductInput) => Promise<boolean> | boolean;
+  onGoToStore: () => void;
   onLogin: () => void;
   onLogout: () => void;
   onProductCategory: (id: string, c: string) => void;
@@ -2521,8 +2601,11 @@ function AdminPage({
   onOrderStatus: (id: string, s: OrderStatus) => void;
   onStockChange: (id: string, s: number) => void;
   onToggleCategory: (id: string) => void;
+  onRefresh: () => Promise<void> | void;
 }) {
   const [tab, setTab] = useState<AdminTab>("overview");
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>(initialAdminUsers);
   const [categoryName, setCategoryName] = useState("");
   const [categoryError, setCategoryError] = useState("");
@@ -2562,9 +2645,14 @@ function AdminPage({
   const ordersInProgress = orders.filter((o) =>
     ["Pending", "Confirmed", "Preparing"].includes(o.status)
   );
-  const revenue = activeOrders.reduce((s, o) => s + o.total, 0);
-  const activeAdmins = adminUsers.filter((a) => a.status === "Active");
+  const revenue = activeOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
   const lowStockProducts = products.filter((p) => p.stock <= 8);
+  const outOfStockProducts = products.filter((p) => p.stock === 0);
+  const pendingOrders = orders.filter((o) => o.status === "Pending");
+  const uniqueCustomers = new Set(
+    orders.map((o) => normalizePhone(o.phone) || o.customer.trim().toLowerCase())
+  ).size;
+  const averageBasket = activeOrders.length > 0 ? revenue / activeOrders.length : 0;
   const visibleOrders =
     orderStatusFilter === "All"
       ? orders
@@ -2572,48 +2660,86 @@ function AdminPage({
 
   const dashboardCards = [
     {
-      label: "Commandes ouvertes",
-      value: ordersInProgress.length.toString(),
-      detail: `${orders.filter((o) => o.status === "Pending").length} pending`,
+      label: "Chiffre d'affaires",
+      value: formatAdminPrice(revenue),
+      detail: "Commandes non annulées",
+      icon: Archive,
+      accent: "bg-brass/15 text-[#8c6827]",
+    },
+    {
+      label: "Commandes",
+      value: orders.length.toString(),
+      detail: `${ordersInProgress.length} en cours`,
       icon: ClipboardList,
       accent: "bg-sage/10 text-sage",
     },
     {
-      label: "Chiffre d'affaires",
-      value: formatPrice(revenue),
-      detail: "Commandes non annulees",
-      icon: Archive,
-      accent: "bg-brass/15 text-brass",
+      label: "Panier moyen",
+      value: formatAdminPrice(averageBasket),
+      detail: "Hors commandes annulées",
+      icon: ShoppingBag,
+      accent: "bg-ink/8 text-ink",
     },
     {
-      label: "Categories actives",
-      value: categories.filter((c) => c.active).length.toString(),
-      detail: `${categories.length} categories total`,
-      icon: Tags,
-      accent: "bg-ink/10 text-ink",
-    },
-    {
-      label: "Admins actifs",
-      value: activeAdmins.length.toString(),
-      detail: `${adminUsers.length} comptes admin`,
+      label: "Clients",
+      value: uniqueCustomers.toString(),
+      detail: "D’après les commandes",
       icon: Users,
+      accent: "bg-sage/10 text-sage",
+    },
+    {
+      label: "Produits en rupture",
+      value: outOfStockProducts.length.toString(),
+      detail: `${lowStockProducts.length} stocks à surveiller`,
+      icon: Boxes,
       accent: "bg-clay/12 text-clay",
+    },
+    {
+      label: "Commandes en attente",
+      value: pendingOrders.length.toString(),
+      detail: "À traiter rapidement",
+      icon: Clock,
+      accent: "bg-[#fff2dc] text-[#a96416]",
     },
   ];
 
+  const salesEvolution = Object.entries(
+    activeOrders.reduce<Record<string, number>>((acc, order) => {
+      acc[order.date] = (acc[order.date] ?? 0) + (Number(order.total) || 0);
+      return acc;
+    }, {})
+  )
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-7)
+    .map(([date, total]) => ({ date, total }))
+    .filter((item) => !Number.isNaN(new Date(`${item.date}T12:00:00`).getTime()));
+  const salesPeak = Math.max(1, ...salesEvolution.map((item) => item.total));
+
+  const ordersByStatus = orderStatuses.map((status) => ({
+    status,
+    count: orders.filter((order) => order.status === status).length,
+  }));
+  const currentTab = adminTabs.find((item) => item.id === tab) ?? adminTabs[0];
+  const currentDate = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+
   const inputCls =
-    "h-12 w-full rounded-xl border border-stone/15 bg-porcelain px-4 text-sm outline-none transition focus:border-sage";
+    "h-11 w-full rounded-xl border border-stone/15 bg-white px-4 text-sm text-ink outline-none transition placeholder:text-stone/55 focus:border-sage focus:ring-4 focus:ring-sage/8";
   const inputCenterCls =
-    "h-12 w-full rounded-xl border border-stone/15 bg-porcelain px-3 text-center text-sm font-bold outline-none transition focus:border-sage";
+    "h-11 w-full rounded-xl border border-stone/15 bg-white px-3 text-center text-sm font-bold outline-none transition focus:border-sage focus:ring-4 focus:ring-sage/8";
   const selectCls =
-    "h-12 w-full rounded-xl border border-stone/15 bg-porcelain px-3 text-sm font-semibold outline-none transition focus:border-sage";
-  const labelCls = "text-xs font-bold uppercase tracking-[0.14em] text-stone";
+    "h-11 w-full rounded-xl border border-stone/15 bg-white px-3 text-sm font-semibold outline-none transition focus:border-sage focus:ring-4 focus:ring-sage/8";
+  const labelCls = "text-[11px] font-bold uppercase tracking-[0.14em] text-stone";
   const btnPrimary =
-    "inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-ink px-5 text-sm font-bold text-white shadow-sm transition hover:bg-sage disabled:cursor-not-allowed disabled:bg-stone/25";
+    "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-ink px-5 text-sm font-bold text-white shadow-sm transition hover:bg-sage disabled:cursor-not-allowed disabled:bg-stone/25";
   const tableHeadCls =
-    "px-5 py-4 text-xs font-bold uppercase tracking-[0.14em] text-stone";
-  const tableCellCls = "px-5 py-5";
-  const rowCls = "border-b border-stone/10 last:border-0 hover:bg-sage/[0.03]";
+    "px-5 py-3.5 text-[11px] font-bold uppercase tracking-[0.13em] text-stone";
+  const tableCellCls = "px-5 py-4";
+  const rowCls = "border-b border-stone/10 last:border-0 transition hover:bg-sage/[0.035]";
 
   function commitPrice(productId: string) {
     const raw = priceDrafts[productId] ?? "";
@@ -2672,7 +2798,7 @@ function AdminPage({
     const notes = normalizeNotes(productForm.notes, [category]);
 
     if (name.length < 2) {
-      setProductFormError("Le nom du produit doit contenir au moins 2 caracteres.");
+      setProductFormError("Le nom du produit doit contenir au moins 2 caractères.");
       return;
     }
     if (!Number.isFinite(price) || price <= 0) {
@@ -2703,7 +2829,7 @@ function AdminPage({
 
     if (!saved) {
       setProductFormError(
-        "Produit non sauvegarde. Verifiez la table products dans Supabase."
+        "Produit non sauvegardé. Vérifiez la table products dans Supabase."
       );
       return;
     }
@@ -2743,15 +2869,15 @@ function AdminPage({
     event.preventDefault();
     const name = categoryName.trim();
     if (name.length < 2) {
-      setCategoryError("Category name must contain at least 2 characters.");
+      setCategoryError("Le nom de la catégorie doit contenir au moins 2 caractères.");
       return;
     }
     if (name.toLowerCase() === "all") {
-      setCategoryError("This category name is reserved.");
+      setCategoryError("Ce nom de catégorie est réservé.");
       return;
     }
     if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
-      setCategoryError("This category already exists.");
+      setCategoryError("Cette catégorie existe déjà.");
       return;
     }
     onAddCategory(name);
@@ -2764,15 +2890,15 @@ function AdminPage({
     const name = newAdminName.trim();
     const email = newAdminEmail.trim();
     if (name.length < 2) {
-      setAdminFormError("Admin name must contain at least 2 characters.");
+      setAdminFormError("Le nom doit contenir au moins 2 caractères.");
       return;
     }
     if (!isValidEmail(email)) {
-      setAdminFormError("Enter a valid admin email.");
+      setAdminFormError("Saisissez une adresse e-mail valide.");
       return;
     }
     if (adminUsers.some((a) => a.email.toLowerCase() === email.toLowerCase())) {
-      setAdminFormError("This admin email already exists.");
+      setAdminFormError("Cette adresse e-mail administrateur existe déjà.");
       return;
     }
     setAdminUsers((c) => [
@@ -2809,33 +2935,103 @@ function AdminPage({
     );
   }
 
+  async function refreshAdminData() {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   if (!authenticated) {
     return (
-      <section className="bg-porcelain px-5 py-12 sm:px-8 lg:py-16">
-        <div className="mx-auto grid min-h-[calc(100vh-220px)] max-w-7xl place-items-center">
+      <section className="min-h-screen bg-[#f3efe7] p-3 sm:p-5">
+        <div className="mx-auto grid min-h-[calc(100vh-24px)] max-w-[1500px] overflow-hidden rounded-[28px] border border-stone/10 bg-white shadow-[0_24px_80px_rgba(37,32,24,0.12)] sm:min-h-[calc(100vh-40px)] lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="relative hidden overflow-hidden bg-ink lg:block">
+            <img
+              alt="Flacons de parfumerie Serr El Oud"
+              className="absolute inset-0 h-full w-full object-cover opacity-60"
+              src="/hero.jpg"
+            />
+            <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(17,20,17,0.28),rgba(17,20,17,0.92))]" />
+            <div className="relative flex h-full flex-col justify-between p-12 text-white xl:p-16">
+              <button
+                className="flex w-fit items-center gap-3 text-left"
+                onClick={onGoToStore}
+                type="button"
+              >
+                <span className="grid h-12 w-12 place-items-center rounded-full border border-brass/50 font-display text-xl text-brass-light">
+                  S
+                </span>
+                <span>
+                  <span className="block font-display text-xl font-semibold">Serr El Oud</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.28em] text-white/55">
+                    Maison de parfumerie
+                  </span>
+                </span>
+              </button>
+
+              <div className="max-w-lg">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-brass-light">
+                  Espace de gestion
+                </p>
+                <h1 className="mt-5 font-display text-5xl font-semibold leading-[1.08] xl:text-6xl">
+                  L’exigence de la maison, jusque dans les détails.
+                </h1>
+                <p className="mt-6 max-w-md text-base leading-7 text-white/65">
+                  Pilotez les commandes, le catalogue et les stocks depuis un espace pensé
+                  pour votre équipe.
+                </p>
+              </div>
+
+              <p className="text-xs text-white/40">Administration sécurisée · Serr El Oud</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center px-5 py-10 sm:px-10 lg:px-14 xl:px-20">
           <form
-            className="w-full max-w-md overflow-hidden rounded-2xl border border-stone/10 bg-white shadow-lg"
+            className="w-full max-w-md"
             onSubmit={submitAdminLogin}
           >
-            <div className="border-b border-stone/10 bg-porcelain/50 px-6 py-6 sm:px-8">
+            <button
+              className="mb-12 flex items-center gap-3 text-left lg:hidden"
+              onClick={onGoToStore}
+              type="button"
+            >
+              <span className="grid h-11 w-11 place-items-center rounded-full bg-ink font-display text-lg text-brass-light">
+                S
+              </span>
+              <span>
+                <span className="block font-display text-lg font-semibold">Serr El Oud</span>
+                <span className="text-[9px] font-bold uppercase tracking-[0.24em] text-stone">
+                  Maison de parfumerie
+                </span>
+              </span>
+            </button>
+
+            <div>
               <div className="flex items-center gap-3">
-                <span className="grid h-12 w-12 place-items-center rounded-xl bg-sage/10 text-sage">
+                <span className="grid h-11 w-11 place-items-center rounded-xl bg-sage/10 text-sage">
                   <ShieldCheck size={22} />
                 </span>
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-sage">
-                    Acces admin
+                    Accès administrateur
                   </p>
-                  <h1 className="font-display text-4xl font-semibold leading-tight text-ink">
-                    Connexion
-                  </h1>
                 </div>
               </div>
+              <h1 className="mt-7 font-display text-4xl font-semibold leading-tight text-ink sm:text-5xl">
+                Heureux de vous revoir.
+              </h1>
+              <p className="mt-3 text-sm leading-6 text-stone">
+                Connectez-vous pour accéder au tableau de bord de la maison.
+              </p>
             </div>
 
-            <div className="p-6 sm:p-8">
+            <div className="mt-9">
               <label className="block">
-                <span className={labelCls}>Email</span>
+                <span className={labelCls}>Adresse e-mail</span>
                 <input
                   className={`mt-2 ${inputCls}`}
                   onChange={(e) => {
@@ -2846,6 +3042,7 @@ function AdminPage({
                   required
                   type="email"
                   value={loginEmail}
+                  autoComplete="username"
                 />
               </label>
 
@@ -2857,16 +3054,19 @@ function AdminPage({
                     setLoginPassword(e.target.value);
                     setLoginError("");
                   }}
-                  placeholder="Password"
+                  placeholder="Votre mot de passe"
                   required
                   type="password"
                   value={loginPassword}
+                  autoComplete="current-password"
                 />
               </label>
 
               {loginError && (
                 <p className="mt-4 rounded-xl border border-clay/20 bg-clay/10 px-4 py-3 text-sm font-semibold text-clay">
-                  {loginError}
+                  {loginError === "Email and password are required."
+                    ? "L’e-mail et le mot de passe sont requis."
+                    : loginError}
                 </p>
               )}
 
@@ -2874,147 +3074,358 @@ function AdminPage({
                 <ShieldCheck size={18} />
                 Se connecter
               </button>
+
+              <button
+                className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold text-stone transition hover:bg-porcelain hover:text-ink"
+                onClick={onGoToStore}
+                type="button"
+              >
+                <ArrowUpRight size={17} />
+                Retour à la boutique
+              </button>
             </div>
           </form>
+          </div>
         </div>
       </section>
     );
   }
 
   return (
-    <section className="bg-porcelain px-5 py-10 sm:px-8 lg:py-14">
-      <div className="mx-auto max-w-[1440px]">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <PageHeading page="admin" />
-          <div className="flex flex-wrap gap-2">
-            <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-sage/25 bg-white px-3 text-xs font-bold uppercase tracking-[0.12em] text-sage shadow-sm">
-              <ShieldCheck size={16} />
-              Back office
-            </span>
-            <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-stone/10 bg-white px-3 text-xs font-bold uppercase tracking-[0.12em] text-stone shadow-sm">
-              <Clock size={16} />
-              Today
-            </span>
+    <section className="min-h-screen bg-[#f5f1e9]">
+      <div className="min-h-screen lg:grid lg:grid-cols-[272px_minmax(0,1fr)]">
+        {adminMenuOpen && (
+          <button
+            aria-label="Fermer le menu administrateur"
+            className="fixed inset-0 z-40 bg-ink/45 backdrop-blur-sm lg:hidden"
+            onClick={() => setAdminMenuOpen(false)}
+            type="button"
+          />
+        )}
+
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex w-[286px] flex-col bg-[#121a16] text-white shadow-2xl transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen lg:w-auto lg:translate-x-0 lg:shadow-none ${
+            adminMenuOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <div className="flex h-20 items-center justify-between border-b border-white/8 px-6">
+            <button className="flex items-center gap-3 text-left" onClick={onGoToStore} type="button">
+              <span className="grid h-10 w-10 place-items-center rounded-full border border-brass/55 font-display text-lg text-brass-light">
+                S
+              </span>
+              <span>
+                <span className="block font-display text-lg font-semibold leading-none">Serr El Oud</span>
+                <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.25em] text-white/40">
+                  Administration
+                </span>
+              </span>
+            </button>
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-stone/15 bg-white px-3 text-xs font-bold uppercase tracking-[0.12em] text-stone shadow-sm transition hover:border-clay hover:text-clay"
-              onClick={() => {
-                setTab("overview");
-                onLogout();
-              }}
+              aria-label="Fermer le menu"
+              className="grid h-9 w-9 place-items-center rounded-lg text-white/60 transition hover:bg-white/8 hover:text-white lg:hidden"
+              onClick={() => setAdminMenuOpen(false)}
               type="button"
             >
-              <X size={16} />
-              Logout
+              <X size={19} />
             </button>
           </div>
-        </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[260px_1fr]">
-          <aside className="self-start rounded-2xl border border-stone/10 bg-white p-2 shadow-sm lg:sticky lg:top-24">
-            <div className="flex gap-1 overflow-x-auto pb-1 lg:grid lg:overflow-visible lg:pb-0">
+          <nav aria-label="Navigation administrateur" className="flex-1 overflow-y-auto px-4 py-7">
+            <p className="px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">
+              Espace de gestion
+            </p>
+            <div className="mt-4 grid gap-1.5">
               {adminTabs.map((item) => {
                 const Icon = item.icon;
                 const isActive = tab === item.id;
                 return (
                   <button
-                    className={`flex h-12 shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-4 text-left text-sm font-bold transition ${
+                    className={`group flex h-12 w-full items-center gap-3 rounded-xl px-3.5 text-left text-sm font-semibold transition ${
                       isActive
-                        ? "bg-ink text-white shadow-sm"
-                        : "text-stone hover:bg-porcelain hover:text-ink"
+                        ? "bg-white text-ink shadow-[0_8px_28px_rgba(0,0,0,0.18)]"
+                        : "text-white/58 hover:bg-white/7 hover:text-white"
                     }`}
                     key={item.id}
-                    onClick={() => setTab(item.id)}
+                    onClick={() => {
+                      setTab(item.id);
+                      setAdminMenuOpen(false);
+                    }}
                     type="button"
                   >
-                    <Icon size={18} />
+                    <span
+                      className={`grid h-8 w-8 place-items-center rounded-lg transition ${
+                        isActive ? "bg-sage/10 text-sage" : "bg-white/5 text-brass-light/65"
+                      }`}
+                    >
+                      <Icon size={17} />
+                    </span>
                     {item.label}
+                    {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brass" />}
                   </button>
                 );
               })}
             </div>
+
+            <div className="mt-8 border-t border-white/8 pt-6">
+              <button
+                className="flex h-11 w-full items-center gap-3 rounded-xl px-3.5 text-sm font-semibold text-white/50 transition hover:bg-white/7 hover:text-white"
+                onClick={onGoToStore}
+                type="button"
+              >
+                <ShoppingBag size={17} />
+                Voir la boutique
+                <ArrowUpRight className="ml-auto" size={15} />
+              </button>
+            </div>
+          </nav>
+
+          <div className="border-t border-white/8 p-4">
+            <div className="rounded-2xl bg-white/[0.055] p-3">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brass/15 font-display text-sm font-bold text-brass-light">
+                  AS
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold">{adminUsers[0]?.name ?? "Administrateur"}</p>
+                  <p className="truncate text-xs text-white/38">
+                    {adminRoleLabels[adminUsers[0]?.role ?? "Owner"]}
+                  </p>
+                </div>
+                <button
+                  aria-label="Se déconnecter"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/45 transition hover:bg-clay/20 hover:text-[#f3a48f]"
+                  onClick={() => {
+                    setTab("overview");
+                    onLogout();
+                  }}
+                  title="Se déconnecter"
+                  type="button"
+                >
+                  <LogOut size={17} />
+                </button>
+              </div>
+            </div>
+          </div>
           </aside>
 
-          <div className="grid gap-6">
+        <div className="min-w-0">
+          <header className="sticky top-0 z-30 border-b border-stone/10 bg-[#f5f1e9]/92 backdrop-blur-xl">
+            <div className="flex min-h-20 items-center gap-3 px-4 sm:px-6 lg:px-8 xl:px-10">
+              <button
+                aria-label="Ouvrir le menu administrateur"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-stone/12 bg-white text-ink shadow-sm lg:hidden"
+                onClick={() => setAdminMenuOpen(true)}
+                type="button"
+              >
+                <Menu size={20} />
+              </button>
+
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate font-display text-2xl font-semibold text-ink sm:text-3xl">
+                  {currentTab.label}
+                </h1>
+                <p className="mt-0.5 hidden text-xs text-stone sm:block">
+                  {tab === "overview" ? currentDate : adminTabDescriptions[tab]}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  aria-label="Actualiser les données"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-stone/12 bg-white px-3 text-sm font-bold text-stone shadow-sm transition hover:border-sage/35 hover:text-sage disabled:cursor-wait disabled:opacity-60"
+                  disabled={refreshing}
+                  onClick={refreshAdminData}
+                  title="Actualiser les données"
+                  type="button"
+                >
+                  <RefreshCw className={refreshing ? "animate-spin" : ""} size={16} />
+                  <span className="hidden xl:inline">Actualiser</span>
+                </button>
+                <button
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-ink px-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-sage sm:px-4"
+                  onClick={() => setTab("inventory")}
+                  type="button"
+                >
+                  <Plus size={17} />
+                  <span className="hidden sm:inline">Ajouter un produit</span>
+                  <span className="sm:hidden">Ajouter</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="p-4 sm:p-6 lg:p-8 xl:p-10">
+          <div className="grid gap-5 lg:gap-6">
             {/* OVERVIEW */}
             {tab === "overview" && (
               <>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {dashboardCards.map((card) => {
                     const Icon = card.icon;
                     return (
                       <div
-                        className="rounded-2xl border border-stone/10 bg-white p-6 shadow-sm"
+                        className="group rounded-2xl border border-stone/10 bg-white p-5 shadow-[0_8px_30px_rgba(45,39,31,0.045)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(45,39,31,0.075)] sm:p-6"
                         key={card.label}
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-stone">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.13em] text-stone">
                             {card.label}
                           </p>
                           <span
-                            className={`grid h-11 w-11 place-items-center rounded-xl ${card.accent}`}
+                            className={`grid h-10 w-10 place-items-center rounded-xl transition group-hover:scale-105 ${card.accent}`}
                           >
-                            <Icon size={19} />
+                            <Icon size={18} />
                           </span>
                         </div>
-                        <p className="mt-5 font-display text-4xl font-semibold text-ink">
+                        <p className="mt-4 text-3xl font-bold tracking-tight text-ink sm:text-[34px]">
                           {card.value}
                         </p>
-                        <p className="mt-1 text-sm text-stone">{card.detail}</p>
+                        <p className="mt-1.5 text-xs text-stone">{card.detail}</p>
                       </div>
                     );
                   })}
                 </div>
 
-                <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-                  <AdminPanel
-                    title="Dernieres commandes"
-                    icon={<ClipboardList size={20} />}
-                  >
-                    <div className="grid gap-3">
-                      {orders.slice(0, 3).map((o) => (
-                        <div
-                          className="grid gap-3 rounded-xl border border-stone/10 bg-porcelain p-4 sm:grid-cols-[1fr_auto] sm:items-center"
-                          key={o.id}
-                        >
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-bold text-ink">{o.id}</p>
-                              <StatusBadge status={o.status} />
+                {(salesEvolution.length > 0 || orders.length > 0) && (
+                  <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+                    {salesEvolution.length > 0 && (
+                      <AdminPanel title="Évolution des ventes" icon={<Archive size={19} />}>
+                        <div className="flex h-56 items-end gap-2 sm:gap-4">
+                          {salesEvolution.map((item) => (
+                            <div className="group flex min-w-0 flex-1 flex-col items-center justify-end" key={item.date}>
+                              <span className="mb-2 hidden text-[10px] font-bold text-stone sm:block">
+                                {formatAdminPrice(item.total)}
+                              </span>
+                              <div className="flex h-36 w-full items-end rounded-xl bg-porcelain/80 p-1.5">
+                                <div
+                                  className="w-full rounded-lg bg-[linear-gradient(180deg,#c8a157,#98712d)] transition-all duration-500 group-hover:brightness-105"
+                                  style={{ height: `${Math.max(8, (item.total / salesPeak) * 100)}%` }}
+                                />
+                              </div>
+                              <span className="mt-2 truncate text-[10px] font-bold uppercase tracking-[0.08em] text-stone">
+                                {new Intl.DateTimeFormat("fr-FR", {
+                                  day: "2-digit",
+                                  month: "short",
+                                }).format(new Date(`${item.date}T12:00:00`))}
+                              </span>
                             </div>
-                            <p className="mt-1 text-sm text-stone">
-                              {o.customer} - {o.items}
-                            </p>
-                          </div>
-                          <p className="font-display text-2xl font-semibold">
-                            {formatPrice(o.total)}
-                          </p>
+                          ))}
                         </div>
-                      ))}
+                      </AdminPanel>
+                    )}
+
+                    {orders.length > 0 && (
+                      <AdminPanel title="Commandes par statut" icon={<ClipboardList size={19} />}>
+                        <div className="grid gap-4">
+                          {ordersByStatus.map((item) => (
+                            <div key={item.status}>
+                              <div className="mb-2 flex items-center justify-between gap-3">
+                                <span className="text-xs font-semibold text-stone">
+                                  {orderStatusLabels[item.status]}
+                                </span>
+                                <span className="text-xs font-bold text-ink">{item.count}</span>
+                              </div>
+                              <div className="h-2 overflow-hidden rounded-full bg-porcelain">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    item.status === "Delivered"
+                                      ? "bg-sage"
+                                      : item.status === "Cancelled"
+                                        ? "bg-clay"
+                                        : item.status === "Pending"
+                                          ? "bg-[#d68a2d]"
+                                          : "bg-brass"
+                                  }`}
+                                  style={{ width: `${orders.length ? (item.count / orders.length) * 100 : 0}%` }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </AdminPanel>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+                  <AdminPanel title="Dernières commandes" icon={<ClipboardList size={19} />}>
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <p className="text-xs text-stone">Les trois commandes les plus récentes</p>
+                      {orders.length > 0 && (
+                        <button
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-sage transition hover:text-ink"
+                          onClick={() => setTab("orders")}
+                          type="button"
+                        >
+                          Voir tout <ChevronRight size={14} />
+                        </button>
+                      )}
                     </div>
+                    {orders.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-stone/20 bg-porcelain/55 px-4 py-8 text-center text-sm font-semibold text-stone">
+                        Aucune commande trouvée.
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-stone/10">
+                        {orders.slice(0, 3).map((order) => (
+                          <div className="grid gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[1fr_auto] sm:items-center" key={order.id}>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-bold text-ink">{order.id}</p>
+                                <StatusBadge status={order.status} />
+                              </div>
+                              <p className="mt-1 truncate text-sm font-semibold text-stone">{order.customer}</p>
+                              <p className="mt-0.5 truncate text-xs text-stone/75">{order.items}</p>
+                            </div>
+                            <div className="sm:text-right">
+                              <p className="text-base font-bold text-ink">{formatAdminPrice(order.total)}</p>
+                              <p className="mt-1 text-xs text-stone">{formatAdminDate(order.date)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </AdminPanel>
 
-                  <AdminPanel title="Alertes stock" icon={<Package size={20} />}>
-                    <div className="grid gap-3">
-                      {lowStockProducts.length === 0 && (
-                        <p className="rounded-xl border border-dashed border-stone/20 bg-porcelain px-4 py-6 text-center text-sm font-semibold text-stone">
-                          Aucun produit en stock faible.
-                        </p>
-                      )}
-                      {lowStockProducts.map((p) => (
-                        <div
-                          className="flex items-center justify-between gap-3 rounded-xl border border-stone/10 bg-porcelain p-4"
-                          key={p.id}
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate font-bold text-ink">{p.name}</p>
-                            <p className="text-sm text-stone">{p.category}</p>
+                  <AdminPanel title="Alertes de stock" icon={<Package size={19} />}>
+                    {lowStockProducts.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-sage/25 bg-sage/5 px-4 py-8 text-center text-sm font-semibold text-sage">
+                        Tous les produits sont suffisamment approvisionnés.
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-stone/10">
+                        {lowStockProducts.slice(0, 5).map((product) => (
+                          <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0" key={product.id}>
+                            <img
+                              alt=""
+                              className="h-10 w-10 rounded-xl border border-stone/10 object-cover"
+                              onError={handleProductImageError}
+                              src={productImageSrc(product)}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-bold text-ink">{product.name}</p>
+                              <p className="text-xs text-stone">{product.category}</p>
+                            </div>
+                            <span
+                              className={`rounded-lg px-2.5 py-1 text-xs font-bold ${
+                                product.stock === 0
+                                  ? "bg-clay/12 text-clay"
+                                  : "bg-[#fff2dc] text-[#a96416]"
+                              }`}
+                            >
+                              {product.stock === 0 ? "Rupture" : `${product.stock} unités`}
+                            </span>
                           </div>
-                          <span className="rounded-lg bg-clay/12 px-3 py-1 text-sm font-bold text-clay">
-                            {p.stock}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                        <button
+                          className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-stone/12 text-xs font-bold text-stone transition hover:border-sage/30 hover:text-sage"
+                          onClick={() => setTab("inventory")}
+                          type="button"
+                        >
+                          Gérer le stock <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    )}
                   </AdminPanel>
                 </div>
               </>
@@ -3022,12 +3433,12 @@ function AdminPage({
 
             {/* ORDERS */}
             {tab === "orders" && (
-              <AdminPanel title="Gestion des commandes" icon={<ClipboardList size={20} />}>
-                <div className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-stone/10 pb-6">
+              <AdminPanel title="Toutes les commandes" icon={<ClipboardList size={20} />}>
+                <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-stone/10 pb-5">
                   <div>
-                    <p className={labelCls}>Tri par statut</p>
+                    <p className={labelCls}>Filtrer par statut</p>
                     <select
-                      className={`mt-2 max-w-xs ${selectCls}`}
+                      className={`mt-2 min-w-52 ${selectCls}`}
                       onChange={(e) =>
                         setOrderStatusFilter(e.target.value as OrderStatus | "All")
                       }
@@ -3036,7 +3447,7 @@ function AdminPage({
                       <option value="All">Tous les statuts</option>
                       {orderStatuses.map((s) => (
                         <option key={s} value={s}>
-                          {s}
+                          {orderStatusLabels[s]}
                         </option>
                       ))}
                     </select>
@@ -3046,7 +3457,7 @@ function AdminPage({
                   </p>
                 </div>
 
-                <div className="overflow-x-auto rounded-xl border border-stone/10">
+                <div className="overflow-x-auto rounded-xl border border-stone/10 bg-white">
                   <table className="w-full min-w-[900px] border-collapse text-left">
                     <thead>
                       <tr className="border-b border-stone/10 bg-porcelain/50">
@@ -3054,7 +3465,7 @@ function AdminPage({
                         <th className={tableHeadCls}>Client</th>
                         <th className={tableHeadCls}>Adresse</th>
                         <th className={tableHeadCls}>Articles</th>
-                        <th className={tableHeadCls}>Gift</th>
+                        <th className={tableHeadCls}>Type</th>
                         <th className={tableHeadCls}>Total</th>
                         <th className={tableHeadCls}>Statut</th>
                       </tr>
@@ -3064,7 +3475,7 @@ function AdminPage({
                         <tr className={rowCls} key={o.id}>
                           <td className={`${tableCellCls} align-top`}>
                             <p className="font-bold text-ink">{o.id}</p>
-                            <p className="text-sm text-stone">{o.date}</p>
+                            <p className="text-sm text-stone">{formatAdminDate(o.date)}</p>
                           </td>
                           <td className={`${tableCellCls} align-top`}>
                             <p className="font-semibold text-ink">{o.customer}</p>
@@ -3092,17 +3503,17 @@ function AdminPage({
                               }`}
                             >
                               {o.gift && <Gift size={14} />}
-                              {o.gift ? "Gift" : "Standard"}
+                              {o.gift ? "Cadeau" : "Standard"}
                             </span>
                           </td>
-                          <td className={`${tableCellCls} font-display text-2xl font-semibold`}>
-                            {formatPrice(o.total)}
+                          <td className={`${tableCellCls} whitespace-nowrap text-base font-bold`}>
+                            {formatAdminPrice(o.total)}
                           </td>
                           <td className={tableCellCls}>
                             <div className="flex items-center gap-2">
                               <StatusBadge status={o.status} />
                               <select
-                                aria-label={`Update status for ${o.id}`}
+                                aria-label={`Modifier le statut de ${o.id}`}
                                 className="h-10 rounded-xl border border-stone/15 bg-porcelain px-3 text-sm font-semibold outline-none focus:border-sage"
                                 onChange={(e) =>
                                   onOrderStatus(o.id, e.target.value as OrderStatus)
@@ -3111,7 +3522,7 @@ function AdminPage({
                               >
                                 {orderStatuses.map((s) => (
                                   <option key={s} value={s}>
-                                    {s}
+                                    {orderStatusLabels[s]}
                                   </option>
                                 ))}
                               </select>
@@ -3125,7 +3536,7 @@ function AdminPage({
 
                 {visibleOrders.length === 0 && (
                   <p className="mt-6 rounded-xl border border-dashed border-stone/20 bg-porcelain px-4 py-6 text-center text-sm font-semibold text-stone">
-                    No commandes found for this status.
+                    Aucune commande trouvée pour ce statut.
                   </p>
                 )}
               </AdminPanel>
@@ -3133,20 +3544,20 @@ function AdminPage({
 
             {/* CATEGORIES */}
             {tab === "categories" && (
-              <AdminPanel title="Gestion des categories" icon={<Tags size={20} />}>
+              <AdminPanel title="Catégories du catalogue" icon={<Tags size={20} />}>
                 <form
                   className="mb-6 grid gap-4 border-b border-stone/10 pb-6 sm:grid-cols-[1fr_160px]"
                   onSubmit={addCategory}
                 >
                   <label className="flex flex-col gap-1.5">
-                    <span className={labelCls}>Nouvelle categorie</span>
+                    <span className={labelCls}>Nouvelle catégorie</span>
                     <input
                       className={inputCls}
                       onChange={(e) => {
                         setCategoryName(e.target.value);
                         setCategoryError("");
                       }}
-                      placeholder="Ex: Incense"
+                      placeholder="Ex. : Encens"
                       required
                       value={categoryName}
                     />
@@ -3167,10 +3578,10 @@ function AdminPage({
                   <table className="w-full min-w-[640px] border-collapse text-left">
                     <thead>
                       <tr className="border-b border-stone/10 bg-porcelain/50">
-                        <th className={tableHeadCls}>Categorie</th>
+                        <th className={tableHeadCls}>Catégorie</th>
                         <th className={tableHeadCls}>Produits</th>
                         <th className={tableHeadCls}>Marge</th>
-                        <th className={tableHeadCls}>Etat</th>
+                        <th className={tableHeadCls}>État</th>
                         <th className={tableHeadCls}>Action</th>
                       </tr>
                     </thead>
@@ -3197,7 +3608,7 @@ function AdminPage({
                                 c.active ? "bg-sage/10 text-sage" : "bg-stone/10 text-stone"
                               }`}
                             >
-                              {c.active ? "Active" : "Masquee"}
+                              {c.active ? "Active" : "Masquée"}
                             </span>
                           </td>
                           <td className={tableCellCls}>
@@ -3220,7 +3631,7 @@ function AdminPage({
 
             {/* ADMINS */}
             {tab === "admins" && (
-              <AdminPanel title="Gestion des admins" icon={<UserCog size={20} />}>
+              <AdminPanel title="Équipe administratrice" icon={<UserCog size={20} />}>
                 <form
                   className="mb-6 grid gap-4 border-b border-stone/10 pb-6 sm:grid-cols-2 lg:grid-cols-[1fr_1.2fr_160px_140px]"
                   onSubmit={inviteAdmin}
@@ -3253,7 +3664,7 @@ function AdminPage({
                     />
                   </label>
                   <label className="flex flex-col gap-1.5">
-                    <span className={labelCls}>Role</span>
+                    <span className={labelCls}>Rôle</span>
                     <select
                       className={selectCls}
                       onChange={(e) => setNewAdminRole(e.target.value as AdminRole)}
@@ -3261,7 +3672,7 @@ function AdminPage({
                     >
                       {adminRoles.map((r) => (
                         <option key={r} value={r}>
-                          {r}
+                          {adminRoleLabels[r]}
                         </option>
                       ))}
                     </select>
@@ -3283,9 +3694,9 @@ function AdminPage({
                     <thead>
                       <tr className="border-b border-stone/10 bg-porcelain/50">
                         <th className={tableHeadCls}>Admin</th>
-                        <th className={tableHeadCls}>Role</th>
+                        <th className={tableHeadCls}>Rôle</th>
                         <th className={tableHeadCls}>Statut</th>
-                        <th className={tableHeadCls}>Derniere activite</th>
+                        <th className={tableHeadCls}>Dernière activité</th>
                         <th className={tableHeadCls}>Action</th>
                       </tr>
                     </thead>
@@ -3298,14 +3709,14 @@ function AdminPage({
                           </td>
                           <td className={tableCellCls}>
                             <select
-                              aria-label={`Update role for ${a.name}`}
+                              aria-label={`Modifier le rôle de ${a.name}`}
                               className="h-10 rounded-xl border border-stone/15 bg-porcelain px-3 text-sm font-semibold outline-none focus:border-sage"
                               onChange={(e) => updateAdminRole(a.id, e.target.value as AdminRole)}
                               value={a.role}
                             >
                               {adminRoles.map((r) => (
                                 <option key={r} value={r}>
-                                  {r}
+                                  {adminRoleLabels[r]}
                                 </option>
                               ))}
                             </select>
@@ -3318,11 +3729,11 @@ function AdminPage({
                                   : "bg-stone/10 text-stone"
                               }`}
                             >
-                              {a.status}
+                              {a.status === "Active" ? "Actif" : "Suspendu"}
                             </span>
                           </td>
                           <td className={`${tableCellCls} text-sm font-semibold text-stone`}>
-                            {a.lastSeen}
+                            {formatAdminActivity(a.lastSeen)}
                           </td>
                           <td className={tableCellCls}>
                             <button
@@ -3331,7 +3742,7 @@ function AdminPage({
                               type="button"
                             >
                               {a.status === "Active" ? <Ban size={16} /> : <Save size={16} />}
-                              {a.status === "Active" ? "Pause" : "Activer"}
+                              {a.status === "Active" ? "Suspendre" : "Activer"}
                             </button>
                           </td>
                         </tr>
@@ -3344,7 +3755,7 @@ function AdminPage({
 
             {/* INVENTORY */}
             {tab === "inventory" && (
-              <AdminPanel title="Gestion stock catalogue" icon={<Boxes size={20} />}>
+              <AdminPanel title="Produits et stock" icon={<Boxes size={20} />}>
                 <form
                   className="mb-6 grid gap-4 border-b border-stone/10 pb-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[1.2fr_1fr_150px_120px_120px_auto]"
                   onSubmit={submitProduct}
@@ -3357,14 +3768,14 @@ function AdminPage({
                         setProductForm((c) => ({ ...c, name: e.target.value }));
                         setProductFormError("");
                       }}
-                      placeholder="Nom produit"
+                      placeholder="Nom du produit"
                       required
                       value={productForm.name}
                     />
                   </label>
 
                   <label className="flex flex-col gap-1.5">
-                    <span className={labelCls}>Categorie</span>
+                    <span className={labelCls}>Catégorie</span>
                     <select
                       className={selectCls}
                       onChange={(e) =>
@@ -3444,7 +3855,7 @@ function AdminPage({
                   </label>
 
                   <label className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-2 xl:col-span-2">
-                    <span className={labelCls}>Notes parfum</span>
+                    <span className={labelCls}>Notes du parfum</span>
                     <input
                       className={inputCls}
                       onChange={(e) =>
@@ -3461,7 +3872,7 @@ function AdminPage({
                     type="submit"
                   >
                     <Plus size={17} />
-                    {productSaving ? "Ajout..." : "Ajouter"}
+                    {productSaving ? "Ajout…" : "Ajouter"}
                   </button>
                 </form>
 
@@ -3476,11 +3887,11 @@ function AdminPage({
                     <thead>
                       <tr className="border-b border-stone/10 bg-porcelain/50">
                         <th className={tableHeadCls}>Produit</th>
-                        <th className={tableHeadCls}>Categorie</th>
+                        <th className={tableHeadCls}>Catégorie</th>
                         <th className={tableHeadCls}>Prix</th>
                         <th className={tableHeadCls}>Stock</th>
                         <th className={tableHeadCls}>Note</th>
-                        <th className={tableHeadCls}>Action</th>
+                        <th className={tableHeadCls}>État</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3490,7 +3901,7 @@ function AdminPage({
                             <div className="grid min-w-[340px] gap-3">
                               <div className="flex items-center gap-3">
                                 <img
-                                  alt={`${product.name} thumbnail`}
+                                  alt={`Aperçu de ${product.name}`}
                                   className="h-14 w-14 rounded-xl border border-stone/10 object-cover shadow-sm"
                                   onError={handleProductImageError}
                                   src={productImageSrc(product)}
@@ -3502,7 +3913,7 @@ function AdminPage({
                                 </div>
                               </div>
                               <input
-                                aria-label={`Image URL for ${product.name}`}
+                                aria-label={`Adresse de l’image pour ${product.name}`}
                                 className="h-10 w-full rounded-xl border border-stone/15 bg-porcelain px-3 text-sm outline-none focus:border-sage"
                                 onBlur={() => commitImage(product.id)}
                                 onChange={(e) =>
@@ -3518,7 +3929,7 @@ function AdminPage({
                                     e.currentTarget.blur();
                                   }
                                 }}
-                                placeholder="Image URL"
+                                placeholder="Adresse de l’image"
                                 type="url"
                                 value={imageDrafts[product.id] ?? product.imageUrl ?? ""}
                               />
@@ -3527,7 +3938,7 @@ function AdminPage({
 
                           <td className={tableCellCls}>
                             <select
-                              aria-label={`Change category for ${product.name}`}
+                              aria-label={`Changer la catégorie de ${product.name}`}
                               className="h-10 rounded-xl border border-stone/15 bg-porcelain px-3 text-sm font-semibold outline-none focus:border-sage"
                               onChange={(e) => onProductCategory(product.id, e.target.value)}
                               value={product.category}
@@ -3543,7 +3954,7 @@ function AdminPage({
                           <td className={tableCellCls}>
                             <label className="inline-flex h-10 items-center overflow-hidden rounded-xl border border-stone/15 bg-white shadow-sm">
                               <input
-                                aria-label={`Price for ${product.name}`}
+                                aria-label={`Prix de ${product.name}`}
                                 className="h-full w-24 bg-transparent px-3 text-center text-sm font-bold text-ink outline-none focus:text-sage"
                                 max="9999"
                                 min="1"
@@ -3574,7 +3985,7 @@ function AdminPage({
                           <td className={tableCellCls}>
                             <div className="inline-flex items-center overflow-hidden rounded-xl border border-stone/15 bg-porcelain shadow-sm">
                               <button
-                                aria-label={`Decrease stock for ${product.name}`}
+                                aria-label={`Diminuer le stock de ${product.name}`}
                                 className="grid h-10 w-10 place-items-center text-stone transition hover:bg-stone/10 hover:text-ink disabled:cursor-not-allowed disabled:text-stone/35"
                                 disabled={product.stock <= 0}
                                 onClick={() => {
@@ -3591,7 +4002,7 @@ function AdminPage({
                               </button>
 
                               <input
-                                aria-label={`Stock amount for ${product.name}`}
+                                aria-label={`Quantité en stock pour ${product.name}`}
                                 className={`h-10 w-16 border-x border-stone/15 bg-white text-center text-sm font-bold outline-none focus:border-sage ${
                                   product.stock <= 8 ? "text-clay" : "text-sage"
                                 }`}
@@ -3616,7 +4027,7 @@ function AdminPage({
                               />
 
                               <button
-                                aria-label={`Increase stock for ${product.name}`}
+                                aria-label={`Augmenter le stock de ${product.name}`}
                                 className="grid h-10 w-10 place-items-center text-stone transition hover:bg-stone/10 hover:text-ink"
                                 onClick={() => {
                                   const v = product.stock + 1;
@@ -3635,7 +4046,7 @@ function AdminPage({
 
                           <td className={tableCellCls}>
                             <input
-                              aria-label={`Rating for ${product.name}`}
+                              aria-label={`Note de ${product.name}`}
                               className="h-10 w-20 rounded-xl border border-stone/15 bg-white px-3 text-center text-sm font-bold text-brass shadow-sm outline-none focus:border-sage"
                               max="5"
                               min="0"
@@ -3660,9 +4071,21 @@ function AdminPage({
                           </td>
 
                           <td className={tableCellCls}>
-                            <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-sage/20 bg-sage/10 px-4 text-sm font-bold text-sage">
-                              <Edit3 size={16} />
-                              Auto saved
+                            <span
+                              className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold ${
+                                product.stock === 0
+                                  ? "border border-clay/20 bg-clay/10 text-clay"
+                                  : product.stock <= 8
+                                    ? "border border-[#d68a2d]/20 bg-[#fff2dc] text-[#a96416]"
+                                    : "border border-sage/20 bg-sage/10 text-sage"
+                              }`}
+                            >
+                              <Edit3 size={14} />
+                              {product.stock === 0
+                                ? "Rupture de stock"
+                                : product.stock <= 8
+                                  ? "Stock faible"
+                                  : "Stock suffisant"}
                             </span>
                           </td>
                         </tr>
@@ -3673,6 +4096,7 @@ function AdminPage({
               </AdminPanel>
             )}
           </div>
+          </main>
         </div>
       </div>
     </section>
@@ -3693,27 +4117,27 @@ function AdminPanel({
   title: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-stone/10 bg-white shadow-sm">
-      <div className="flex items-center gap-3 border-b border-stone/10 bg-porcelain/50 px-6 py-5 sm:px-8">
-        <span className="grid h-11 w-11 place-items-center rounded-xl bg-sage/10 text-sage">
+    <section className="overflow-hidden rounded-[20px] border border-stone/10 bg-white shadow-[0_8px_30px_rgba(45,39,31,0.045)]">
+      <div className="flex items-center gap-3 border-b border-stone/10 px-5 py-4 sm:px-6">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-sage/10 text-sage">
           {icon}
         </span>
-        <h2 className="font-display text-2xl font-semibold leading-tight text-ink sm:text-3xl">
+        <h2 className="font-display text-xl font-semibold leading-tight text-ink">
           {title}
         </h2>
       </div>
-      <div className="p-6 sm:p-8">{children}</div>
+      <div className="p-5 sm:p-6">{children}</div>
     </section>
   );
 }
 
 function StatusBadge({ status }: { status: OrderStatus }) {
   const cls: Record<OrderStatus, string> = {
-    Pending: "bg-brass/15 text-brass",
-    Confirmed: "bg-sage/10 text-sage",
-    Preparing: "bg-clay/12 text-clay",
-    Delivered: "bg-ink/10 text-ink",
-    Cancelled: "bg-stone/10 text-stone",
+    Pending: "border border-[#d68a2d]/20 bg-[#fff2dc] text-[#9a5b12]",
+    Confirmed: "border border-sage/20 bg-sage/10 text-sage",
+    Preparing: "border border-[#d68a2d]/20 bg-[#fff2dc] text-[#9a5b12]",
+    Delivered: "border border-sage/20 bg-sage/10 text-sage",
+    Cancelled: "border border-clay/20 bg-clay/10 text-clay",
   };
   const ico: Record<OrderStatus, ReactNode> = {
     Pending: <Clock size={14} />,
@@ -3727,7 +4151,7 @@ function StatusBadge({ status }: { status: OrderStatus }) {
       className={`inline-flex h-7 items-center gap-1 rounded px-2 text-xs font-bold uppercase tracking-[0.1em] ${cls[status]}`}
     >
       {ico[status]}
-      {status}
+      {orderStatusLabels[status]}
     </span>
   );
 }
